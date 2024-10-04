@@ -338,7 +338,7 @@ async fn get_demo_details(
     }
 }
 #[options("/{any:.*}")]
-async fn handle_options(req: HttpRequest) -> impl Responder {
+async fn handle_options(_req: HttpRequest) -> impl Responder {
     HttpResponse::Ok()
         .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art"))
         .insert_header(("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE"))
@@ -362,7 +362,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
-                        "user_id", // Asegurarse de permitir el encabezado custom user_id
+                        http::header::HeaderName::from_static("user_id"),
                     ])
                     .allow_any_header()
                     .supports_credentials(),
