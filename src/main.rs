@@ -1,6 +1,8 @@
 use actix_cors::Cors;
 use actix_multipart::Multipart;
-use actix_web::{delete, get, http, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{
+    delete, get, http, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder,options
+};
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use rusqlite::{params, Connection};
@@ -73,9 +75,11 @@ async fn upload(
     // Obtener el user_id del encabezado o del token JWT decodificado
     let user_id = match req.headers().get("user_id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
-        None => return HttpResponse::BadRequest()
-            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
-            .body("Missing user_id in headers"),
+        None => {
+            return HttpResponse::BadRequest()
+                .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
+                .body("Missing user_id in headers")
+        }
     };
 
     // Intentamos crear el directorio de subida
@@ -91,7 +95,12 @@ async fn upload(
 
     while let Ok(Some(mut field)) = payload.try_next().await {
         let file_extension = "mp3";
-        let filename = format!("{}-{}.{}", sanitize(&metadata.title), demo_id, file_extension);
+        let filename = format!(
+            "{}-{}.{}",
+            sanitize(&metadata.title),
+            demo_id,
+            file_extension
+        );
         let filepath = audio_upload_dir.join(&filename);
 
         // Manejar errores en la creación del archivo
@@ -111,7 +120,10 @@ async fn upload(
                 Err(e) => {
                     eprintln!("Error reading chunk: {:?}", e);
                     return HttpResponse::InternalServerError()
-                        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
+                        .insert_header((
+                            "Access-Control-Allow-Origin",
+                            "https://test.devingfor.art",
+                        )) // Agregar el encabezado CORS en la respuesta de error
                         .body(format!("Error reading file chunk: {:?}", e));
                 }
             };
@@ -127,7 +139,10 @@ async fn upload(
                 Err(e) => {
                     eprintln!("Error writing file: {:?}", e);
                     return HttpResponse::InternalServerError()
-                        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
+                        .insert_header((
+                            "Access-Control-Allow-Origin",
+                            "https://test.devingfor.art",
+                        )) // Agregar el encabezado CORS en la respuesta de error
                         .body(format!("Error writing file: {:?}", e));
                 }
             };
@@ -170,7 +185,6 @@ async fn upload(
         .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
         .body("File upload failed")
 }
-
 
 // Handler para obtener los tracks
 #[get("/tracks")]
@@ -342,32 +356,54 @@ async fn get_demo_details(
     }
 }
 
+#[options("/{any:.*}")]
+async fn handle_options(req: HttpRequest) -> impl Responder {
+    // Obtener el origen de la solicitud
+    let origin = req
+        .headers()
+        .get("Origin")
+        .map(|h| h.to_str().unwrap_or(""))
+        .unwrap_or("");
+    HttpResponse::Ok()
+        .insert_header(("Access-Control-Allow-Origin", origin))
+        .insert_header(("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type, Accept",
+        ))
+        .insert_header(("Access-Control-Allow-Credentials", "true"))
+        .insert_header(("Access-Control-Max-Age", "3600"))
+        .finish()
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db = web::Data::new(Mutex::new(init_db()));
+    let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
 
     HttpServer::new(move || {
         App::new()
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art")
-                    .allowed_origin("https://devingfor.art")
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
+                    .allowed_origin("https://test.devingfor.art") // Permitir solicitudes desde test.devingfor.art
+                    .allowed_origin("https://devingfor.art") // Permitir solicitudes desde devingfor.art
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
                         http::header::ACCEPT,
                     ])
-                    .supports_credentials()
-                    .max_age(3600),
+                    .allow_any_header() // Permitir cualquier encabezado
+                    .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
+                    .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
             )
             .service(upload)
             .service(get_tracks)
             .service(delete_audio)
             .service(stream_audio)
+            .service(handle_options) // Agregar el handler de OPTIONS
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
     .run()
     .await
 }
