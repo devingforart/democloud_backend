@@ -380,24 +380,12 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .wrap(
-                Cors::default()
-                    .allowed_origin("https://test.devingfor.art")
-                    .allowed_origin("https://devingfor.art")
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
-                    .allowed_headers(vec![
-                        http::header::CONTENT_TYPE,
-                        http::header::AUTHORIZATION,
-                        http::header::ACCEPT,
-                    ])
-                    .supports_credentials()
-                    .max_age(3600),
-            )
-            .service(upload)
-            .service(get_tracks)
-            .service(delete_audio)
-            .service(stream_audio)
-            .service(handle_options) // Handler de OPTIONS para las solicitudes preflight
+            .app_data(db.clone()) // Pasar la base de datos a los handlers
+            .service(upload)      // Servicio de subida de archivos
+            .service(get_tracks)  // Servicio para obtener tracks
+            .service(delete_audio)// Servicio para eliminar archivos
+            .service(stream_audio)// Servicio para servir archivos de audio
+            .service(handle_options) // Servicio para manejar OPTIONS, pero sin CORS en Rust
     })
     .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
     .run()
