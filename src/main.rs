@@ -178,7 +178,10 @@ async fn get_tracks(
 
     // Obtener el user_id del encabezado o del token JWT decodificado
     let user_id = match req.headers().get("X-User-Id") {
-        Some(value) => value.to_str().unwrap_or("").to_string(),
+        Some(value) => match value.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return HttpResponse::BadRequest().body("Invalid X-User-Id header"),
+        },
         None => return HttpResponse::BadRequest().body("Missing X-User-Id in headers"),
     };
     let mut stmt = match conn
