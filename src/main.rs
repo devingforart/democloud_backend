@@ -65,18 +65,13 @@ fn init_db() -> Connection {
     conn
 }
 
-
-
 #[post("/upload")]
-async fn upload(
-    mut payload: Multipart,
-    db: web::Data<Mutex<Connection>>,
-) -> impl Responder {
+async fn upload(mut payload: Multipart, db: web::Data<Mutex<Connection>>) -> impl Responder {
     let audio_upload_dir = get_audio_upload_dir();
 
-    let mut user_id = String::new();  // Para almacenar el user_id recibido
-    let mut artist = String::new();   // Para almacenar el artista
-    let mut title = String::new();    // Para almacenar el título
+    let mut user_id = String::new(); // Para almacenar el user_id recibido
+    let mut artist = String::new(); // Para almacenar el artista
+    let mut title = String::new(); // Para almacenar el título
 
     // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
@@ -108,12 +103,7 @@ async fn upload(
         } else if name == "file" {
             // Procesar el archivo
             let file_extension = "mp3";
-            let filename = format!(
-                "{}-{}.{}",
-                sanitize(&title),
-                demo_id,
-                file_extension
-            );
+            let filename = format!("{}-{}.{}", sanitize(&title), demo_id, file_extension);
             let filepath = audio_upload_dir.join(&filename);
 
             // Manejar errores en la creación del archivo
@@ -183,7 +173,6 @@ async fn upload(
 
     HttpResponse::BadRequest().body("File upload failed")
 }
-
 
 // Handler para obtener los tracks
 #[get("/tracks")]
@@ -369,10 +358,10 @@ async fn handle_options(_req: HttpRequest) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
-            .wrap(Logger::default()) 
+            .wrap(Logger::default())
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art")
+                    .allow_any_origin() // Solo para depuración, evita esto en producción
                     .allowed_methods(vec!["GET", "POST", "OPTIONS", "DELETE"])
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
@@ -382,7 +371,7 @@ async fn main() -> std::io::Result<()> {
                     .allow_any_header()
                     .supports_credentials(),
             )
-            .app_data(PayloadConfig::new(100 * 1024 * 1024)) 
+            .app_data(PayloadConfig::new(100 * 1024 * 1024))
             .service(upload)
             .service(get_tracks)
             .service(delete_audio)
