@@ -348,20 +348,30 @@ async fn handle_options(req: HttpRequest) -> impl Responder {
         .unwrap_or("");
     HttpResponse::Ok().finish()
 }
+
+
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
-
-    HttpServer::new(move || {
+    HttpServer::new(|| {
         App::new()
-            .app_data(db.clone()) // Pasar la base de datos a los handlers
-            .service(upload) // Servicio de subida de archivos
-            .service(get_tracks) // Servicio para obtener tracks
-            .service(delete_audio) // Servicio para eliminar archivos
-            .service(stream_audio) // Servicio para servir archivos de audio
-            .service(handle_options) // Servicio para manejar OPTIONS, pero sin CORS en Rust
+            .wrap(
+                Cors::default()
+                    .allowed_origin("https://test.devingfor.art")  // Permite el dominio específico
+                    .allowed_methods(vec!["GET", "POST", "OPTIONS", "DELETE"])
+                    .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION])
+                    .allow_any_header()
+                    .supports_credentials() // Si usas cookies o autenticación
+            )
+            // Tus servicios Actix aquí
+            .service(upload)
+            .service(get_tracks)
+            .service(delete_audio)
+            .service(stream_audio)
+            .service(stream_demo)
+            .service(get_demo_details)
     })
-    .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
