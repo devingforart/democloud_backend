@@ -343,15 +343,10 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 Cors::default()
                     .allowed_origin_fn(|origin, _req_head| {
-                        origin.as_bytes().ends_with(b"test.devingfor.art")
-                            || origin.as_bytes().ends_with(b"devingfor.art")
+                        origin.as_bytes().ends_with(b"test.devingfor.art") || origin.as_bytes().ends_with(b"devingfor.art")
                     })
                     .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
-                    .allowed_headers(vec![
-                        http::header::CONTENT_TYPE,
-                        http::header::AUTHORIZATION,
-                        http::header::ACCEPT,
-                    ])
+                    .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION, http::header::ACCEPT])
                     .allow_any_header() // Permitir cualquier encabezado en las solicitudes
                     .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
                     .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
