@@ -341,11 +341,12 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 Cors::default()
                     .allowed_origin("https://test.devingfor.art")
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permite POST y OPTIONS
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
                         http::header::HeaderName::from_static("user_id"),
+                        http::header::HeaderName::from_static("X-User-Id"), // Asegúrate de incluir X-User-Id
                     ])
                     .allow_any_header()
                     .supports_credentials()
