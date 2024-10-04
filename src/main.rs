@@ -1,5 +1,7 @@
 use actix_cors::Cors;
 use actix_multipart::Multipart;
+use actix_web::middleware::Logger;
+use actix_web::web::PayloadConfig;
 use actix_web::{
     delete, get, http, options, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
@@ -14,8 +16,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use uuid::Uuid;
-use actix_web::middleware::Logger;
-use actix_web::web::PayloadConfig;
 
 fn get_audio_upload_dir() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")); // Ruta raíz del proyecto
@@ -339,7 +339,15 @@ async fn get_demo_details(
 }
 #[options("/{any:.*}")]
 async fn handle_options(req: HttpRequest) -> impl Responder {
-    HttpResponse::Ok().finish()
+    HttpResponse::Ok()
+        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art"))
+        .insert_header(("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, Accept, user_id",
+        ))
+        .insert_header(("Access-Control-Allow-Credentials", "true"))
+        .finish()
 }
 
 #[actix_web::main]
@@ -355,7 +363,8 @@ async fn main() -> std::io::Result<()> {
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
                     ])
-                    .allow_any_header(),
+                    .allow_any_header()
+                    .supports_credentials(), // Asegúrate de habilitar credenciales si usas cookies o autenticación
             )
             .app_data(PayloadConfig::new(100 * 1024 * 1024)) // Límite de tamaño del payload
             .service(upload)
