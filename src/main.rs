@@ -362,9 +362,10 @@ async fn main() -> std::io::Result<()> {
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
+                        "user_id", // Asegurarse de permitir el encabezado custom user_id
                     ])
                     .allow_any_header()
-                    .supports_credentials(), // Asegúrate de habilitar credenciales si usas cookies o autenticación
+                    .supports_credentials(),
             )
             .app_data(PayloadConfig::new(100 * 1024 * 1024)) // Límite de tamaño del payload
             .service(upload)
