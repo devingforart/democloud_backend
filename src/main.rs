@@ -360,6 +360,15 @@ async fn main() -> std::io::Result<()> {
             .service(get_tracks)
             .service(stream_demo)
             .service(get_demo_details)
+            // Ruta adicional para manejar OPTIONS
+            .route("/upload", web::options().to(|| {
+                HttpResponse::Ok()
+                    .header("Access-Control-Allow-Origin", "https://test.devingfor.art")
+                    .header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+                    .header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+                    .header("Access-Control-Allow-Credentials", "true")
+                    .finish()
+            }))
     })
     .bind(("127.0.0.1", 8080))?
     .run()
