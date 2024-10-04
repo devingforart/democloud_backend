@@ -73,13 +73,16 @@ async fn upload(
     // Obtener el user_id del encabezado o del token JWT decodificado
     let user_id = match req.headers().get("user_id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
-        None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
+        None => return HttpResponse::BadRequest()
+            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
+            .body("Missing user_id in headers"),
     };
 
     // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
         eprintln!("Error creating upload directory: {:?}", e);
         return HttpResponse::InternalServerError()
+            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
             .body(format!("Failed to create upload directory: {:?}", e));
     }
 
@@ -88,12 +91,7 @@ async fn upload(
 
     while let Ok(Some(mut field)) = payload.try_next().await {
         let file_extension = "mp3";
-        let filename = format!(
-            "{}-{}.{}",
-            sanitize(&metadata.title),
-            demo_id,
-            file_extension
-        );
+        let filename = format!("{}-{}.{}", sanitize(&metadata.title), demo_id, file_extension);
         let filepath = audio_upload_dir.join(&filename);
 
         // Manejar errores en la creación del archivo
@@ -102,6 +100,7 @@ async fn upload(
             Err(e) => {
                 eprintln!("Error creating file: {:?}", e);
                 return HttpResponse::InternalServerError()
+                    .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                     .body(format!("Failed to create file: {:?}", e));
             }
         };
@@ -112,6 +111,7 @@ async fn upload(
                 Err(e) => {
                     eprintln!("Error reading chunk: {:?}", e);
                     return HttpResponse::InternalServerError()
+                        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                         .body(format!("Error reading file chunk: {:?}", e));
                 }
             };
@@ -127,6 +127,7 @@ async fn upload(
                 Err(e) => {
                     eprintln!("Error writing file: {:?}", e);
                     return HttpResponse::InternalServerError()
+                        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                         .body(format!("Error writing file: {:?}", e));
                 }
             };
@@ -138,6 +139,7 @@ async fn upload(
             Err(e) => {
                 eprintln!("Error locking database: {:?}", e);
                 return HttpResponse::InternalServerError()
+                    .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                     .body(format!("Failed to lock database: {:?}", e));
             }
         };
@@ -148,6 +150,7 @@ async fn upload(
         ) {
             eprintln!("Error inserting track into database: {:?}", e);
             return HttpResponse::InternalServerError()
+                .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                 .body(format!("Failed to insert track into database: {:?}", e));
         }
 
@@ -157,11 +160,17 @@ async fn upload(
             demo_id: demo_id.to_string(),
             file_url: format!("/audio/{}", filename),
         };
-        return HttpResponse::Ok().json(response);
+
+        return HttpResponse::Ok()
+            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Incluir encabezado CORS en la respuesta de éxito
+            .json(response);
     }
 
-    HttpResponse::BadRequest().body("File upload failed")
+    HttpResponse::BadRequest()
+        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
+        .body("File upload failed")
 }
+
 
 // Handler para obtener los tracks
 #[get("/tracks")]
@@ -335,7 +344,7 @@ async fn get_demo_details(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
+    let db = web::Data::new(Mutex::new(init_db()));
 
     HttpServer::new(move || {
         App::new()
@@ -345,7 +354,11 @@ async fn main() -> std::io::Result<()> {
                     .allowed_origin("https://test.devingfor.art")
                     .allowed_origin("https://devingfor.art")
                     .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
-                    .allow_any_header()
+                    .allowed_headers(vec![
+                        http::header::CONTENT_TYPE,
+                        http::header::AUTHORIZATION,
+                        http::header::ACCEPT,
+                    ])
                     .supports_credentials()
                     .max_age(3600),
             )
@@ -354,7 +367,7 @@ async fn main() -> std::io::Result<()> {
             .service(delete_audio)
             .service(stream_audio)
     })
-    .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
