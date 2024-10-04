@@ -14,6 +14,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use uuid::Uuid;
+use actix_web::middleware::Logger;
+use actix_web::web::PayloadConfig;
 
 fn get_audio_upload_dir() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")); // Ruta raíz del proyecto
@@ -152,8 +154,7 @@ async fn upload(
             params![&metadata.artist, &metadata.title, &filename, demo_id.to_string(), &user_id],
         ) {
             eprintln!("Error inserting track into database: {:?}", e);
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to insert track into database: {:?}", e));
+            return HttpResponse::InternalServerError().body(format!("Failed to insert track into database: {:?}", e));
         }
 
         // Devolver la URL de la demo pública
@@ -336,24 +337,16 @@ async fn get_demo_details(
         Err(_) => HttpResponse::NotFound().body("Demo not found"),
     }
 }
-
 #[options("/{any:.*}")]
 async fn handle_options(req: HttpRequest) -> impl Responder {
-    HttpResponse::Ok()
-        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art"))
-        .insert_header(("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE"))
-        .insert_header((
-            "Access-Control-Allow-Headers",
-            "Content-Type, Authorization, Accept, user_id",
-        ))
-        .insert_header(("Access-Control-Allow-Credentials", "true")) // Si estás usando credenciales
-        .finish()
+    HttpResponse::Ok().finish()
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
+            .wrap(Logger::default()) // Agregar logger para registrar solicitudes
             .wrap(
                 Cors::default()
                     .allowed_origin("https://test.devingfor.art")
@@ -364,7 +357,7 @@ async fn main() -> std::io::Result<()> {
                     ])
                     .allow_any_header(),
             )
-            // Tus servicios Actix aquí
+            .app_data(PayloadConfig::new(100 * 1024 * 1024)) // Límite de tamaño del payload
             .service(upload)
             .service(get_tracks)
             .service(delete_audio)
