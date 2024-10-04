@@ -342,7 +342,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("http://localhost:5173") // Permite solicitudes desde localhost:5173
+                    .allowed_origin("https://test.devingfor.art") // Permite solicitudes desde localhost:5173
                     .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
                     .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION, http::header::ACCEPT])
                     .allow_any_header()  // Permitir cualquier encabezado en las solicitudes
