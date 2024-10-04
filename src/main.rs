@@ -71,11 +71,10 @@ async fn upload(
     let audio_upload_dir = get_audio_upload_dir();
 
     // Obtener el user_id del encabezado o del token JWT decodificado
-    let user_id = match req.headers().get("user_id") {
+    let user_id = match req.headers().get("User_id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
         None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
     };
-
     // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
         eprintln!("Error creating upload directory: {:?}", e);
@@ -344,8 +343,12 @@ async fn main() -> std::io::Result<()> {
                 Cors::default()
                     .allowed_origin("https://test.devingfor.art") // Permite solicitudes desde localhost:5173
                     .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
-                    .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION, http::header::ACCEPT])
-                    .allow_any_header()  // Permitir cualquier encabezado en las solicitudes
+                    .allowed_headers(vec![
+                        http::header::CONTENT_TYPE,
+                        http::header::AUTHORIZATION,
+                        http::header::ACCEPT,
+                    ])
+                    .allow_any_header() // Permitir cualquier encabezado en las solicitudes
                     .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
                     .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
             )
