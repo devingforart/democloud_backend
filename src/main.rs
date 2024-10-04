@@ -341,16 +341,16 @@ async fn main() -> std::io::Result<()> {
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art") // Permite solicitudes desde localhost:5173
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
+                    .allowed_origin("https://test.devingfor.art")
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
-                        http::header::HeaderName::from_static("user_id"), // Convierte el nombre del encabezado
+                        http::header::HeaderName::from_static("user_id"),
                     ])
-                    .allow_any_header() // Permitir cualquier encabezado en las solicitudes
-                    .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
-                    .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
+                    .allow_any_header()
+                    .supports_credentials()
+                    .max_age(3600),
             )
             .service(upload)
             .service(stream_audio)
