@@ -71,9 +71,9 @@ async fn upload(
     let audio_upload_dir = get_audio_upload_dir();
 
     // Obtener el user_id del encabezado o del token JWT decodificado
-    let user_id = match req.headers().get("user_id") {
+    let user_id = match req.headers().get("X-User-Id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
-        None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
+        None => return HttpResponse::BadRequest().body("Missing X-User-Id in headers"),
     };
     // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
@@ -177,11 +177,10 @@ async fn get_tracks(
     };
 
     // Obtener el user_id del encabezado o del token JWT decodificado
-    let user_id = match req.headers().get("user_id") {
+    let user_id = match req.headers().get("X-User-Id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
-        None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
+        None => return HttpResponse::BadRequest().body("Missing X-User-Id in headers"),
     };
-
     let mut stmt = match conn
         .prepare("SELECT artist, title, file_path, demo_id FROM tracks WHERE user_id = ?1")
     {
