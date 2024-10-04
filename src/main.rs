@@ -76,9 +76,7 @@ async fn upload(
     let user_id = match req.headers().get("user_id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
         None => {
-            return HttpResponse::BadRequest()
-                .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
-                .body("Missing user_id in headers");
+            return HttpResponse::BadRequest().body("Missing user_id in headers");
         }
     };
 
@@ -86,7 +84,6 @@ async fn upload(
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
         eprintln!("Error creating upload directory: {:?}", e);
         return HttpResponse::InternalServerError()
-            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
             .body(format!("Failed to create upload directory: {:?}", e));
     }
 
@@ -109,7 +106,6 @@ async fn upload(
             Err(e) => {
                 eprintln!("Error creating file: {:?}", e);
                 return HttpResponse::InternalServerError()
-                    .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                     .body(format!("Failed to create file: {:?}", e));
             }
         };
@@ -120,10 +116,6 @@ async fn upload(
                 Err(e) => {
                     eprintln!("Error reading chunk: {:?}", e);
                     return HttpResponse::InternalServerError()
-                        .insert_header((
-                            "Access-Control-Allow-Origin",
-                            "https://test.devingfor.art",
-                        )) // Agregar el encabezado CORS en la respuesta de error
                         .body(format!("Error reading file chunk: {:?}", e));
                 }
             };
@@ -139,10 +131,7 @@ async fn upload(
                 Err(e) => {
                     eprintln!("Error writing file: {:?}", e);
                     return HttpResponse::InternalServerError()
-                        .insert_header((
-                            "Access-Control-Allow-Origin",
-                            "https://test.devingfor.art",
-                        )) // Agregar el encabezado CORS en la respuesta de error
+                        // Agregar el encabezado CORS en la respuesta de error
                         .body(format!("Error writing file: {:?}", e));
                 }
             };
@@ -154,7 +143,6 @@ async fn upload(
             Err(e) => {
                 eprintln!("Error locking database: {:?}", e);
                 return HttpResponse::InternalServerError()
-                    .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                     .body(format!("Failed to lock database: {:?}", e));
             }
         };
@@ -165,7 +153,6 @@ async fn upload(
         ) {
             eprintln!("Error inserting track into database: {:?}", e);
             return HttpResponse::InternalServerError()
-                .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
                 .body(format!("Failed to insert track into database: {:?}", e));
         }
 
@@ -177,12 +164,10 @@ async fn upload(
         };
 
         return HttpResponse::Ok()
-            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Incluir encabezado CORS en la respuesta de éxito
             .json(response);
     }
 
     HttpResponse::BadRequest()
-        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
         .body("File upload failed")
 }
 
@@ -248,7 +233,6 @@ async fn stream_audio(path: web::Path<String>) -> impl Responder {
     if filepath.exists() {
         HttpResponse::Ok()
             .content_type("audio/mpeg")
-            .insert_header(("Content-Disposition", "inline"))
             .body(fs::read(filepath).unwrap())
     } else {
         HttpResponse::NotFound().body("File not found")
@@ -318,7 +302,6 @@ async fn stream_demo(path: web::Path<String>, db: web::Data<Mutex<Connection>>) 
             if filepath.exists() {
                 HttpResponse::Ok()
                     .content_type("audio/mpeg")
-                    .insert_header(("Content-Disposition", "inline"))
                     .body(fs::read(filepath).unwrap())
             } else {
                 HttpResponse::NotFound().body("File not found")
@@ -363,16 +346,7 @@ async fn handle_options(req: HttpRequest) -> impl Responder {
         .get("Origin")
         .map(|h| h.to_str().unwrap_or(""))
         .unwrap_or("");
-    HttpResponse::Ok()
-        .insert_header(("Access-Control-Allow-Origin", origin))
-        .insert_header(("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"))
-        .insert_header((
-            "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, Accept",
-        ))
-        .insert_header(("Access-Control-Allow-Credentials", "true"))
-        .insert_header(("Access-Control-Max-Age", "3600"))
-        .finish()
+    HttpResponse::Ok().finish()
 }
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -381,10 +355,10 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(db.clone()) // Pasar la base de datos a los handlers
-            .service(upload)      // Servicio de subida de archivos
-            .service(get_tracks)  // Servicio para obtener tracks
-            .service(delete_audio)// Servicio para eliminar archivos
-            .service(stream_audio)// Servicio para servir archivos de audio
+            .service(upload) // Servicio de subida de archivos
+            .service(get_tracks) // Servicio para obtener tracks
+            .service(delete_audio) // Servicio para eliminar archivos
+            .service(stream_audio) // Servicio para servir archivos de audio
             .service(handle_options) // Servicio para manejar OPTIONS, pero sin CORS en Rust
     })
     .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
