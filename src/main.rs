@@ -71,7 +71,7 @@ async fn upload(
     let audio_upload_dir = get_audio_upload_dir();
 
     // Obtener el user_id del encabezado o del token JWT decodificado
-    let user_id = match req.headers().get("User_id") {
+    let user_id = match req.headers().get("user_id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
         None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
     };
@@ -346,7 +346,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
-                        http::header::ACCEPT,
+                        http::header::HeaderName::from_static("user_id"), // Convierte el nombre del encabezado
                     ])
                     .allow_any_header() // Permitir cualquier encabezado en las solicitudes
                     .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
