@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_multipart::Multipart;
 use actix_web::{
-    delete, get, http, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder,options
+    delete, get, http, options, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
@@ -78,7 +78,7 @@ async fn upload(
         None => {
             return HttpResponse::BadRequest()
                 .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art")) // Agregar el encabezado CORS en la respuesta de error
-                .body("Missing user_id in headers")
+                .body("Missing user_id in headers");
         }
     };
 
@@ -358,7 +358,6 @@ async fn get_demo_details(
 
 #[options("/{any:.*}")]
 async fn handle_options(req: HttpRequest) -> impl Responder {
-    // Obtener el origen de la solicitud
     let origin = req
         .headers()
         .get("Origin")
@@ -375,33 +374,30 @@ async fn handle_options(req: HttpRequest) -> impl Responder {
         .insert_header(("Access-Control-Max-Age", "3600"))
         .finish()
 }
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
 
     HttpServer::new(move || {
         App::new()
-            .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art") // Permitir solicitudes desde test.devingfor.art
-                    .allowed_origin("https://devingfor.art") // Permitir solicitudes desde devingfor.art
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
+                    .allowed_origin("https://test.devingfor.art")
+                    .allowed_origin("https://devingfor.art")
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
                         http::header::ACCEPT,
                     ])
-                    .allow_any_header() // Permitir cualquier encabezado
-                    .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
-                    .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
+                    .supports_credentials()
+                    .max_age(3600),
             )
             .service(upload)
             .service(get_tracks)
             .service(delete_audio)
             .service(stream_audio)
-            .service(handle_options) // Agregar el handler de OPTIONS
+            .service(handle_options) // Handler de OPTIONS para las solicitudes preflight
     })
     .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
     .run()
