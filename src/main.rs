@@ -65,22 +65,18 @@ fn init_db() -> Connection {
     conn
 }
 
+
+
 #[post("/upload")]
 async fn upload(
     mut payload: Multipart,
-    metadata: web::Query<SongMetadata>,
     db: web::Data<Mutex<Connection>>,
-    req: actix_web::HttpRequest, // Para obtener el user_id desde los headers
 ) -> impl Responder {
     let audio_upload_dir = get_audio_upload_dir();
 
-    // Obtener el user_id del encabezado o del token JWT decodificado
-    let user_id = match req.headers().get("user_id") {
-        Some(value) => value.to_str().unwrap_or("").to_string(),
-        None => {
-            return HttpResponse::BadRequest().body("Missing user_id in headers");
-        }
-    };
+    let mut user_id = String::new();  // Para almacenar el user_id recibido
+    let mut artist = String::new();   // Para almacenar el artista
+    let mut title = String::new();    // Para almacenar el título
 
     // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
@@ -93,82 +89,101 @@ async fn upload(
     let demo_id = Uuid::new_v4(); // Generamos un demo_id único
 
     while let Ok(Some(mut field)) = payload.try_next().await {
-        let file_extension = "mp3";
-        let filename = format!(
-            "{}-{}.{}",
-            sanitize(&metadata.title),
-            demo_id,
-            file_extension
-        );
-        let filepath = audio_upload_dir.join(&filename);
+        let content_disposition = field.content_disposition().unwrap();
+        let name = content_disposition.get_name().unwrap();
 
-        // Manejar errores en la creación del archivo
-        let mut f = match web::block(move || std::fs::File::create(filepath.clone())).await {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("Error creating file: {:?}", e);
-                return HttpResponse::InternalServerError()
-                    .body(format!("Failed to create file: {:?}", e));
+        // Identificamos los diferentes campos del formulario
+        if name == "user_id" {
+            while let Some(chunk) = field.next().await {
+                user_id = String::from_utf8(chunk.unwrap().to_vec()).unwrap();
             }
-        };
+        } else if name == "artist" {
+            while let Some(chunk) = field.next().await {
+                artist = String::from_utf8(chunk.unwrap().to_vec()).unwrap();
+            }
+        } else if name == "title" {
+            while let Some(chunk) = field.next().await {
+                title = String::from_utf8(chunk.unwrap().to_vec()).unwrap();
+            }
+        } else if name == "file" {
+            // Procesar el archivo
+            let file_extension = "mp3";
+            let filename = format!(
+                "{}-{}.{}",
+                sanitize(&title),
+                demo_id,
+                file_extension
+            );
+            let filepath = audio_upload_dir.join(&filename);
 
-        while let Some(chunk) = field.next().await {
-            let data = match chunk {
-                Ok(data) => data,
-                Err(e) => {
-                    eprintln!("Error reading chunk: {:?}", e);
-                    return HttpResponse::InternalServerError()
-                        .body(format!("Error reading file chunk: {:?}", e));
-                }
-            };
-
-            // Manejar errores al escribir en el archivo
-            f = match web::block(move || {
-                let mut file = f.unwrap();
-                file.write_all(&data).map(|_| file)
-            })
-            .await
-            {
+            // Manejar errores en la creación del archivo
+            let mut f = match web::block(move || std::fs::File::create(filepath.clone())).await {
                 Ok(f) => f,
                 Err(e) => {
-                    eprintln!("Error writing file: {:?}", e);
+                    eprintln!("Error creating file: {:?}", e);
                     return HttpResponse::InternalServerError()
-                        // Agregar el encabezado CORS en la respuesta de error
-                        .body(format!("Error writing file: {:?}", e));
+                        .body(format!("Failed to create file: {:?}", e));
                 }
             };
-        }
 
-        // Insertar los datos en la base de datos con `user_id`
-        let conn = match db.lock() {
-            Ok(conn) => conn,
-            Err(e) => {
-                eprintln!("Error locking database: {:?}", e);
-                return HttpResponse::InternalServerError()
-                    .body(format!("Failed to lock database: {:?}", e));
+            while let Some(chunk) = field.next().await {
+                let data = match chunk {
+                    Ok(data) => data,
+                    Err(e) => {
+                        eprintln!("Error reading chunk: {:?}", e);
+                        return HttpResponse::InternalServerError()
+                            .body(format!("Error reading file chunk: {:?}", e));
+                    }
+                };
+
+                // Manejar errores al escribir en el archivo
+                f = match web::block(move || {
+                    let mut file = f.unwrap();
+                    file.write_all(&data).map(|_| file)
+                })
+                .await
+                {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("Error writing file: {:?}", e);
+                        return HttpResponse::InternalServerError()
+                            .body(format!("Error writing file: {:?}", e));
+                    }
+                };
             }
-        };
 
-        if let Err(e) = conn.execute(
-            "INSERT INTO tracks (artist, title, file_path, demo_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![&metadata.artist, &metadata.title, &filename, demo_id.to_string(), &user_id],
-        ) {
-            eprintln!("Error inserting track into database: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Failed to insert track into database: {:?}", e));
+            // Insertar los datos en la base de datos con `user_id`
+            let conn = match db.lock() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    eprintln!("Error locking database: {:?}", e);
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Failed to lock database: {:?}", e));
+                }
+            };
+
+            if let Err(e) = conn.execute(
+                "INSERT INTO tracks (artist, title, file_path, demo_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![&artist, &title, &filename, demo_id.to_string(), &user_id],
+            ) {
+                eprintln!("Error inserting track into database: {:?}", e);
+                return HttpResponse::InternalServerError().body(format!("Failed to insert track into database: {:?}", e));
+            }
+
+            // Devolver la URL de la demo pública
+            let response = UploadResponse {
+                message: String::from("File uploaded successfully"),
+                demo_id: demo_id.to_string(),
+                file_url: format!("/audio/{}", filename),
+            };
+
+            return HttpResponse::Ok().json(response);
         }
-
-        // Devolver la URL de la demo pública
-        let response = UploadResponse {
-            message: String::from("File uploaded successfully"),
-            demo_id: demo_id.to_string(),
-            file_url: format!("/audio/{}", filename),
-        };
-
-        return HttpResponse::Ok().json(response);
     }
 
     HttpResponse::BadRequest().body("File upload failed")
 }
+
 
 // Handler para obtener los tracks
 #[get("/tracks")]
@@ -354,7 +369,7 @@ async fn handle_options(_req: HttpRequest) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
-            .wrap(Logger::default()) // Agregar logger para registrar solicitudes
+            .wrap(Logger::default()) 
             .wrap(
                 Cors::default()
                     .allowed_origin("https://test.devingfor.art")
@@ -367,7 +382,7 @@ async fn main() -> std::io::Result<()> {
                     .allow_any_header()
                     .supports_credentials(),
             )
-            .app_data(PayloadConfig::new(100 * 1024 * 1024)) // Límite de tamaño del payload
+            .app_data(PayloadConfig::new(100 * 1024 * 1024)) 
             .service(upload)
             .service(get_tracks)
             .service(delete_audio)
