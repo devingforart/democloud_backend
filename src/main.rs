@@ -342,15 +342,11 @@ async fn main() -> std::io::Result<()> {
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art") // Permitir solicitudes desde test.devingfor.art
-                    .allowed_origin("https://devingfor.art") // Permitir solicitudes desde devingfor.art
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
-                    .allowed_headers(vec![
-                        http::header::CONTENT_TYPE,
-                        http::header::AUTHORIZATION,
-                        http::header::ACCEPT,
-                    ])
-                    .allow_any_header() // Permitir cualquier encabezado en las solicitudes
+                .allowed_origin("https://test.devingfor.art")  // Permitir solicitudes desde test.devingfor.art
+                .allowed_origin("https://devingfor.art")  // Permitir solicitudes desde devingfor.art
+                            .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
+                    .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION, http::header::ACCEPT])
+                    .allow_any_header()  // Permitir cualquier encabezado en las solicitudes
                     .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
                     .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
             )
@@ -360,15 +356,6 @@ async fn main() -> std::io::Result<()> {
             .service(get_tracks)
             .service(stream_demo)
             .service(get_demo_details)
-            // Ruta adicional para manejar OPTIONS
-            .route("/upload", web::options().to(|| {
-                HttpResponse::Ok()
-                    .header("Access-Control-Allow-Origin", "https://test.devingfor.art")
-                    .header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-                    .header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
-                    .header("Access-Control-Allow-Credentials", "true")
-                    .finish()
-            }))
     })
     .bind(("127.0.0.1", 8080))?
     .run()
