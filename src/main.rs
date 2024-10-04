@@ -66,22 +66,25 @@ async fn upload(
     mut payload: Multipart,
     metadata: web::Query<SongMetadata>,
     db: web::Data<Mutex<Connection>>,
-    req: actix_web::HttpRequest,
+    req: actix_web::HttpRequest, // Para obtener el user_id desde los headers
 ) -> impl Responder {
     let audio_upload_dir = get_audio_upload_dir();
 
+    // Obtener el user_id del encabezado o del token JWT decodificado
     let user_id = match req.headers().get("user_id") {
         Some(value) => value.to_str().unwrap_or("").to_string(),
         None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
     };
 
+    // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
         eprintln!("Error creating upload directory: {:?}", e);
         return HttpResponse::InternalServerError()
             .body(format!("Failed to create upload directory: {:?}", e));
     }
 
-    let demo_id = Uuid::new_v4();
+    // Generar un UUID único para el demo
+    let demo_id = Uuid::new_v4(); // Generamos un demo_id único
 
     while let Ok(Some(mut field)) = payload.try_next().await {
         let file_extension = "mp3";
@@ -93,6 +96,7 @@ async fn upload(
         );
         let filepath = audio_upload_dir.join(&filename);
 
+        // Manejar errores en la creación del archivo
         let mut f = match web::block(move || std::fs::File::create(filepath.clone())).await {
             Ok(f) => f,
             Err(e) => {
@@ -112,6 +116,7 @@ async fn upload(
                 }
             };
 
+            // Manejar errores al escribir en el archivo
             f = match web::block(move || {
                 let mut file = f.unwrap();
                 file.write_all(&data).map(|_| file)
@@ -127,6 +132,7 @@ async fn upload(
             };
         }
 
+        // Insertar los datos en la base de datos con `user_id`
         let conn = match db.lock() {
             Ok(conn) => conn,
             Err(e) => {
@@ -141,17 +147,17 @@ async fn upload(
             params![&metadata.artist, &metadata.title, &filename, demo_id.to_string(), &user_id],
         ) {
             eprintln!("Error inserting track into database: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Failed to insert track into database: {:?}", e));
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to insert track into database: {:?}", e));
         }
 
+        // Devolver la URL de la demo pública
         let response = UploadResponse {
             message: String::from("File uploaded successfully"),
             demo_id: demo_id.to_string(),
             file_url: format!("/audio/{}", filename),
         };
-        return HttpResponse::Ok()
-            .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art"))
-            .json(response);
+        return HttpResponse::Ok().json(response);
     }
 
     HttpResponse::BadRequest().body("File upload failed")
@@ -329,53 +335,30 @@ async fn get_demo_details(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db = web::Data::new(Mutex::new(init_db()));
+    let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
 
     HttpServer::new(move || {
         App::new()
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin_fn(|origin, _req_head| {
-                        origin.as_bytes().ends_with(b"test.devingfor.art")
-                            || origin.as_bytes().ends_with(b"devingfor.art")
-                    })
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
+                    .allowed_origin("https://test.devingfor.art") // Permitir solicitudes desde test.devingfor.art
+                    .allowed_origin("https://devingfor.art") // Permitir solicitudes desde devingfor.art
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
                         http::header::ACCEPT,
                     ])
-                    .allow_any_header()
-                    .supports_credentials()
-                    .max_age(3600),
+                    .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
+                    .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
             )
             .service(upload)
             .service(get_tracks)
             .service(delete_audio)
             .service(stream_audio)
-            .route(
-                "/upload",
-                web::options().to(|| async {
-                    HttpResponse::Ok()
-                        .insert_header((
-                            "Access-Control-Allow-Origin",
-                            "https://test.devingfor.art",
-                        ))
-                        .insert_header((
-                            "Access-Control-Allow-Methods",
-                            "GET, POST, DELETE, OPTIONS",
-                        ))
-                        .insert_header((
-                            "Access-Control-Allow-Headers",
-                            "Authorization, Content-Type, Accept",
-                        ))
-                        .insert_header(("Access-Control-Allow-Credentials", "true"))
-                        .finish()
-                }),
-            )
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", 8080))? // Cambiar a 0.0.0.0 para aceptar conexiones externas
     .run()
     .await
 }
