@@ -51,11 +51,13 @@ fn init_db() -> Connection {
             artist TEXT NOT NULL,
             title TEXT NOT NULL,
             file_path TEXT NOT NULL,
-            demo_id TEXT NOT NULL
+            demo_id TEXT NOT NULL,
+            user_id TEXT NOT NULL  -- Nuevo campo para almacenar el id de Auth0
         )",
         [],
     )
     .expect("Failed to create table");
+
     conn
 }
 
@@ -64,8 +66,15 @@ async fn upload(
     mut payload: Multipart,
     metadata: web::Query<SongMetadata>,
     db: web::Data<Mutex<Connection>>,
+    req: actix_web::HttpRequest, // Para obtener el user_id desde los headers
 ) -> impl Responder {
     let audio_upload_dir = get_audio_upload_dir();
+
+    // Obtener el user_id del encabezado o del token JWT decodificado
+    let user_id = match req.headers().get("user_id") {
+        Some(value) => value.to_str().unwrap_or("").to_string(),
+        None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
+    };
 
     // Intentamos crear el directorio de subida
     if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
@@ -123,7 +132,7 @@ async fn upload(
             };
         }
 
-        // Manejar errores en la inserción a la base de datos
+        // Insertar los datos en la base de datos con `user_id`
         let conn = match db.lock() {
             Ok(conn) => conn,
             Err(e) => {
@@ -134,13 +143,8 @@ async fn upload(
         };
 
         if let Err(e) = conn.execute(
-            "INSERT INTO tracks (artist, title, file_path, demo_id) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                &metadata.artist,
-                &metadata.title,
-                &filename,
-                demo_id.to_string()
-            ],
+            "INSERT INTO tracks (artist, title, file_path, demo_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![&metadata.artist, &metadata.title, &filename, demo_id.to_string(), &user_id],
         ) {
             eprintln!("Error inserting track into database: {:?}", e);
             return HttpResponse::InternalServerError()
@@ -161,7 +165,10 @@ async fn upload(
 
 // Handler para obtener los tracks
 #[get("/tracks")]
-async fn get_tracks(db: web::Data<Mutex<Connection>>) -> impl Responder {
+async fn get_tracks(
+    db: web::Data<Mutex<Connection>>,
+    req: actix_web::HttpRequest,
+) -> impl Responder {
     let conn = match db.lock() {
         Ok(conn) => conn,
         Err(e) => {
@@ -170,8 +177,15 @@ async fn get_tracks(db: web::Data<Mutex<Connection>>) -> impl Responder {
         }
     };
 
-    // Incluimos `demo_id` en la consulta SQL
-    let mut stmt = match conn.prepare("SELECT artist, title, file_path, demo_id FROM tracks") {
+    // Obtener el user_id del encabezado o del token JWT decodificado
+    let user_id = match req.headers().get("user_id") {
+        Some(value) => value.to_str().unwrap_or("").to_string(),
+        None => return HttpResponse::BadRequest().body("Missing user_id in headers"),
+    };
+
+    let mut stmt = match conn
+        .prepare("SELECT artist, title, file_path, demo_id FROM tracks WHERE user_id = ?1")
+    {
         Ok(stmt) => stmt,
         Err(e) => {
             eprintln!("Error preparing SQL statement: {:?}", e);
@@ -179,12 +193,12 @@ async fn get_tracks(db: web::Data<Mutex<Connection>>) -> impl Responder {
         }
     };
 
-    let track_iter = match stmt.query_map([], |row| {
+    let track_iter = match stmt.query_map([&user_id], |row| {
         Ok(Track {
             artist: row.get(0)?,
             title: row.get(1)?,
             file_url: format!("/audio/{}", row.get::<_, String>(2)?),
-            demo_id: row.get(3)?, // Aquí obtenemos el demo_id
+            demo_id: row.get(3)?,
         })
     }) {
         Ok(track_iter) => track_iter,
@@ -253,31 +267,6 @@ async fn delete_audio(path: web::Path<String>, db: web::Data<Mutex<Connection>>)
     }
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
-
-    HttpServer::new(move || {
-        App::new()
-            .app_data(db.clone())
-            .wrap(
-                Cors::default()
-                    .allow_any_origin()
-                    .allowed_methods(vec!["GET", "POST", "DELETE"])
-                    .allowed_headers(vec![http::header::CONTENT_TYPE])
-                    .max_age(3600),
-            )
-            .service(upload)
-            .service(stream_audio)
-            .service(delete_audio)
-            .service(get_tracks)
-            .service(stream_demo) // Agregar el servicio de streaming de demos
-            .service(get_demo_details) // Agregar el servicio para obtener detalles de demo
-    })
-    .bind(("127.0.0.1", 8080))?
-    .run()
-    .await
-}
 #[get("/demo/{demo_id}")]
 async fn stream_demo(path: web::Path<String>, db: web::Data<Mutex<Connection>>) -> impl Responder {
     let demo_id = path.into_inner();
@@ -342,4 +331,32 @@ async fn get_demo_details(
         Ok(track) => HttpResponse::Ok().json(track),
         Err(_) => HttpResponse::NotFound().body("Demo not found"),
     }
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(db.clone())
+            .wrap(
+                Cors::default()
+                    .allowed_origin("http://localhost:5173") // Permite solicitudes desde localhost:5173
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permitir métodos específicos
+                    .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION, http::header::ACCEPT])
+                    .allow_any_header()  // Permitir cualquier encabezado en las solicitudes
+                    .supports_credentials() // Permitir el uso de cookies y credenciales en las solicitudes de CORS
+                    .max_age(3600), // Cachea la respuesta preflight por 3600 segundos
+            )
+            .service(upload)
+            .service(stream_audio)
+            .service(delete_audio)
+            .service(get_tracks)
+            .service(stream_demo)
+            .service(get_demo_details)
+    })
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
 }
