@@ -14,3 +14,4 @@ actix-files = "0.6.6"
 futures-util = "0.3.30"
 actix-cors = "0.7.0"
 rusqlite = "0.32.1"
+uuid = { version = "1.10.0", features = ["v4"] }

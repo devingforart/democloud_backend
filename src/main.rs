@@ -6,23 +6,24 @@ use futures_util::TryStreamExt;
 use rusqlite::{params, Connection};
 use sanitize_filename::sanitize;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
 use std::io::Write;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::env;
+use uuid::Uuid;
 
 fn get_audio_upload_dir() -> PathBuf {
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));  // Ruta raíz del proyecto
+    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")); // Ruta raíz del proyecto
     dir.push("uploads");
     dir
 }
 
-// Estructura para la respuesta del mensaje de éxito
 #[derive(Serialize)]
 struct UploadResponse {
     message: String,
-    file_url: String,
+    demo_id: String,  // Devolvemos el demo_id para generar la URL
+    file_url: String, // También devolvemos el file_url para la previsualización
 }
 
 // Estructura para recibir los metadatos
@@ -38,6 +39,7 @@ struct Track {
     artist: String,
     title: String,
     file_url: String,
+    demo_id: String,
 }
 
 // Inicialización de la base de datos y creación de la tabla
@@ -48,7 +50,8 @@ fn init_db() -> Connection {
             id INTEGER PRIMARY KEY,
             artist TEXT NOT NULL,
             title TEXT NOT NULL,
-            file_path TEXT NOT NULL
+            file_path TEXT NOT NULL,
+            demo_id TEXT NOT NULL
         )",
         [],
     )
@@ -56,59 +59,99 @@ fn init_db() -> Connection {
     conn
 }
 
-// Handler para subir el archivo de audio y guardar en la base de datos
 #[post("/upload")]
 async fn upload(
     mut payload: Multipart,
     metadata: web::Query<SongMetadata>,
     db: web::Data<Mutex<Connection>>,
 ) -> impl Responder {
-    // Obtener el directorio de subida de audios
     let audio_upload_dir = get_audio_upload_dir();
 
-    // Crear el directorio si no existe
-    fs::create_dir_all(&audio_upload_dir).unwrap();
+    // Intentamos crear el directorio de subida
+    if let Err(e) = fs::create_dir_all(&audio_upload_dir) {
+        eprintln!("Error creating upload directory: {:?}", e);
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to create upload directory: {:?}", e));
+    }
+
+    // Generar un UUID único para el demo
+    let demo_id = Uuid::new_v4(); // Generamos un demo_id único
 
     while let Ok(Some(mut field)) = payload.try_next().await {
-        // Generar el nombre de archivo basado en {artista - título}
-        let file_extension = "mp3"; // Asumiendo que todos los archivos son mp3
+        let file_extension = "mp3";
         let filename = format!(
-            "{} - {}.{}",
-            sanitize(&metadata.artist),
+            "{}-{}.{}",
             sanitize(&metadata.title),
+            demo_id,
             file_extension
         );
         let filepath = audio_upload_dir.join(&filename);
 
-        // Guardar el archivo subido
-        let mut f = web::block(move || std::fs::File::create(filepath.clone()))
-            .await
-            .unwrap();
+        // Manejar errores en la creación del archivo
+        let mut f = match web::block(move || std::fs::File::create(filepath.clone())).await {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Error creating file: {:?}", e);
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to create file: {:?}", e));
+            }
+        };
 
         while let Some(chunk) = field.next().await {
-            let data = chunk.unwrap();
-            f = web::block(move || {
-                let mut file = f.unwrap(); // Desenrollamos el Result
+            let data = match chunk {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("Error reading chunk: {:?}", e);
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Error reading file chunk: {:?}", e));
+                }
+            };
+
+            // Manejar errores al escribir en el archivo
+            f = match web::block(move || {
+                let mut file = f.unwrap();
                 file.write_all(&data).map(|_| file)
             })
             .await
-            .unwrap();
+            {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Error writing file: {:?}", e);
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Error writing file: {:?}", e));
+                }
+            };
         }
 
-        // Insertar los metadatos en la base de datos
-        let conn = db.lock().unwrap();
-        conn.execute(
-            "INSERT INTO tracks (artist, title, file_path) VALUES (?1, ?2, ?3)",
-            params![&metadata.artist, &metadata.title, &filename],
-        )
-        .expect("Failed to insert track into database");
+        // Manejar errores en la inserción a la base de datos
+        let conn = match db.lock() {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("Error locking database: {:?}", e);
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to lock database: {:?}", e));
+            }
+        };
 
-        // Devuelve la URL donde se podrá acceder al archivo
-        let file_url = format!("/audio/{}", filename);
+        if let Err(e) = conn.execute(
+            "INSERT INTO tracks (artist, title, file_path, demo_id) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                &metadata.artist,
+                &metadata.title,
+                &filename,
+                demo_id.to_string()
+            ],
+        ) {
+            eprintln!("Error inserting track into database: {:?}", e);
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to insert track into database: {:?}", e));
+        }
 
+        // Devolver la URL de la demo pública
         let response = UploadResponse {
             message: String::from("File uploaded successfully"),
-            file_url,
+            demo_id: demo_id.to_string(),
+            file_url: format!("/audio/{}", filename),
         };
         return HttpResponse::Ok().json(response);
     }
@@ -119,20 +162,37 @@ async fn upload(
 // Handler para obtener los tracks
 #[get("/tracks")]
 async fn get_tracks(db: web::Data<Mutex<Connection>>) -> impl Responder {
-    let conn = db.lock().unwrap();
-    let mut stmt = conn
-        .prepare("SELECT artist, title, file_path FROM tracks")
-        .expect("Failed to prepare statement");
+    let conn = match db.lock() {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("Error locking database: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to lock database");
+        }
+    };
 
-    let track_iter = stmt
-        .query_map([], |row| {
-            Ok(Track {
-                artist: row.get(0)?,   // obtener el artista
-                title: row.get(1)?,    // obtener el título
-                file_url: format!("/audio/{}", row.get::<_, String>(2)?),  // obtener la URL del archivo
-            })
+    // Incluimos `demo_id` en la consulta SQL
+    let mut stmt = match conn.prepare("SELECT artist, title, file_path, demo_id FROM tracks") {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            eprintln!("Error preparing SQL statement: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to prepare SQL statement");
+        }
+    };
+
+    let track_iter = match stmt.query_map([], |row| {
+        Ok(Track {
+            artist: row.get(0)?,
+            title: row.get(1)?,
+            file_url: format!("/audio/{}", row.get::<_, String>(2)?),
+            demo_id: row.get(3)?, // Aquí obtenemos el demo_id
         })
-        .expect("Failed to map query");
+    }) {
+        Ok(track_iter) => track_iter,
+        Err(e) => {
+            eprintln!("Error mapping query: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to query tracks");
+        }
+    };
 
     let mut tracks = Vec::new();
     for track in track_iter {
@@ -147,6 +207,7 @@ async fn get_tracks(db: web::Data<Mutex<Connection>>) -> impl Responder {
 async fn stream_audio(path: web::Path<String>) -> impl Responder {
     let filename = path.into_inner();
     let filepath: PathBuf = get_audio_upload_dir().join(&filename);
+
     if filepath.exists() {
         HttpResponse::Ok()
             .content_type("audio/mpeg")
@@ -162,21 +223,29 @@ async fn stream_audio(path: web::Path<String>) -> impl Responder {
 async fn delete_audio(path: web::Path<String>, db: web::Data<Mutex<Connection>>) -> impl Responder {
     let filename = path.into_inner();
     let filepath: PathBuf = get_audio_upload_dir().join(&filename);
-    
-    // Log para verificar la ruta
-    println!("Attempting to delete file: {:?}", filepath);
-    
-    if filepath.exists() {
-        // Eliminar el archivo del sistema
-        fs::remove_file(filepath).unwrap();
 
-        // Eliminar el registro de la base de datos
-        let conn = db.lock().unwrap();
-        conn.execute(
+    if filepath.exists() {
+        if let Err(e) = fs::remove_file(&filepath) {
+            eprintln!("Error deleting file: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to delete file");
+        }
+
+        let conn = match db.lock() {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("Error locking database: {:?}", e);
+                return HttpResponse::InternalServerError().body("Failed to lock database");
+            }
+        };
+
+        if let Err(e) = conn.execute(
             "DELETE FROM tracks WHERE file_path = ?1",
             params![&filename],
-        )
-        .expect("Failed to delete track from database");
+        ) {
+            eprintln!("Error deleting track from database: {:?}", e);
+            return HttpResponse::InternalServerError()
+                .body("Failed to delete track from database");
+        }
 
         HttpResponse::Ok().body("File and record deleted successfully")
     } else {
@@ -201,9 +270,76 @@ async fn main() -> std::io::Result<()> {
             .service(upload)
             .service(stream_audio)
             .service(delete_audio)
-            .service(get_tracks) // Nuevo servicio para obtener las pistas
+            .service(get_tracks)
+            .service(stream_demo) // Agregar el servicio de streaming de demos
+            .service(get_demo_details) // Agregar el servicio para obtener detalles de demo
     })
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
+}
+#[get("/demo/{demo_id}")]
+async fn stream_demo(path: web::Path<String>, db: web::Data<Mutex<Connection>>) -> impl Responder {
+    let demo_id = path.into_inner();
+    let conn = match db.lock() {
+        Ok(conn) => conn,
+        Err(e) => {
+            eprintln!("Error locking database: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to lock database");
+        }
+    };
+
+    // Buscar el archivo basado en demo_id
+    let mut stmt = match conn.prepare("SELECT file_path FROM tracks WHERE demo_id = ?1") {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            eprintln!("Error preparing SQL statement: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to prepare SQL statement");
+        }
+    };
+
+    let result = stmt.query_row([&demo_id], |row| row.get::<_, String>(0)); // Especificamos que esperamos un String
+
+    match result {
+        Ok(file_path) => {
+            let filepath = get_audio_upload_dir().join(file_path);
+            if filepath.exists() {
+                HttpResponse::Ok()
+                    .content_type("audio/mpeg")
+                    .insert_header(("Content-Disposition", "inline"))
+                    .body(fs::read(filepath).unwrap())
+            } else {
+                HttpResponse::NotFound().body("File not found")
+            }
+        }
+        Err(_) => HttpResponse::NotFound().body("Demo not found"),
+    }
+}
+
+#[get("/demo_details/{demo_id}")]
+async fn get_demo_details(
+    path: web::Path<String>,
+    db: web::Data<Mutex<Connection>>,
+) -> impl Responder {
+    let demo_id = path.into_inner();
+    let conn = db.lock().unwrap();
+
+    // Buscar el archivo basado en demo_id
+    let mut stmt = conn
+        .prepare("SELECT artist, title, file_path, demo_id FROM tracks WHERE demo_id = ?1")
+        .expect("Failed to prepare statement");
+
+    let result = stmt.query_row([&demo_id], |row| {
+        Ok(Track {
+            artist: row.get(0)?,
+            title: row.get(1)?,
+            file_url: format!("/audio/{}", row.get::<_, String>(2)?),
+            demo_id: row.get(3)?, // Incluimos el demo_id aquí
+        })
+    });
+
+    match result {
+        Ok(track) => HttpResponse::Ok().json(track),
+        Err(_) => HttpResponse::NotFound().body("Demo not found"),
+    }
 }
