@@ -163,12 +163,10 @@ async fn upload(
             file_url: format!("/audio/{}", filename),
         };
 
-        return HttpResponse::Ok()
-            .json(response);
+        return HttpResponse::Ok().json(response);
     }
 
-    HttpResponse::BadRequest()
-        .body("File upload failed")
+    HttpResponse::BadRequest().body("File upload failed")
 }
 
 // Handler para obtener los tracks
@@ -341,15 +339,16 @@ async fn get_demo_details(
 
 #[options("/{any:.*}")]
 async fn handle_options(req: HttpRequest) -> impl Responder {
-    let origin = req
-        .headers()
-        .get("Origin")
-        .map(|h| h.to_str().unwrap_or(""))
-        .unwrap_or("");
-    HttpResponse::Ok().finish()
+    HttpResponse::Ok()
+        .insert_header(("Access-Control-Allow-Origin", "https://test.devingfor.art"))
+        .insert_header(("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, Accept, user_id",
+        ))
+        .insert_header(("Access-Control-Allow-Credentials", "true")) // Si estás usando credenciales
+        .finish()
 }
-
-
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -357,11 +356,13 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art")  // Permite el dominio específico
+                    .allowed_origin("https://test.devingfor.art")
                     .allowed_methods(vec!["GET", "POST", "OPTIONS", "DELETE"])
-                    .allowed_headers(vec![http::header::CONTENT_TYPE, http::header::AUTHORIZATION])
-                    .allow_any_header()
-                    .supports_credentials() // Si usas cookies o autenticación
+                    .allowed_headers(vec![
+                        http::header::CONTENT_TYPE,
+                        http::header::AUTHORIZATION,
+                    ])
+                    .allow_any_header(),
             )
             // Tus servicios Actix aquí
             .service(upload)
