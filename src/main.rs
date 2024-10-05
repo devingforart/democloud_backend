@@ -10,7 +10,6 @@ use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -334,6 +333,7 @@ async fn get_demo_details(
         Err(_) => HttpResponse::NotFound().body("Demo not found"),
     }
 }
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let db = web::Data::new(Mutex::new(init_db())); // Conexión SQLite compartida
@@ -343,16 +343,15 @@ async fn main() -> std::io::Result<()> {
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("http://127.0.0.1:5173")
-                    .allowed_origin("https://devingfor.art") 
-                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"])
+                    .allowed_origin("https://devingfor.art")
+                    .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permite POST y OPTIONS
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
                         http::header::HeaderName::try_from("X-User-Id").unwrap(),
                     ])
                     .allow_any_header()
-                    .supports_credentials()  // Si estás utilizando cookies o autenticación
+                    .supports_credentials()
                     .max_age(3600),
             )
             .service(upload)
