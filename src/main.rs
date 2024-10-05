@@ -344,6 +344,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 Cors::default()
                     .allowed_origin("https://devingfor.art")
+                    .allowed_origin("http://127.0.0.1:5173")
                     .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permite POST y OPTIONS
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
