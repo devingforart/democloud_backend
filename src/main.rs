@@ -343,7 +343,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(db.clone())
             .wrap(
                 Cors::default()
-                    .allowed_origin("https://test.devingfor.art")
+                    .allowed_origin("https://devingfor.art")
                     .allowed_methods(vec!["GET", "POST", "DELETE", "OPTIONS"]) // Permite POST y OPTIONS
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
