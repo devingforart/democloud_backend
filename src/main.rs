@@ -348,7 +348,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_headers(vec![
                         http::header::CONTENT_TYPE,
                         http::header::AUTHORIZATION,
-                        http::header::HeaderName::from_static("X-User-Id"), // Asegúrate de incluir X-User-Id
+                        http::header::HeaderName::try_from("X-User-Id").unwrap(),
                     ])
                     .allow_any_header()
                     .supports_credentials()
